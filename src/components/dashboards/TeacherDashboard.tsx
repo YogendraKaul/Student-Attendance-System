@@ -1,31 +1,257 @@
 
-import { Calendar, Users } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Calendar, Users, UserCheck, Book } from "lucide-react";
 import NavBar from "@/components/NavBar";
 import DashboardCard from "@/components/DashboardCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAuth } from "@/integrations/supabase/auth";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const TeacherDashboard = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [studentsWithAttendance, setStudentsWithAttendance] = useState<any[]>([]);
   
-  // Mock data - in a real app this would come from an API
-  const teacherData = {
-    classes: [
-      { id: "10A", name: "Class 10A", studentsCount: 30, attendanceRate: "96%" },
-      { id: "11B", name: "Class 11B", studentsCount: 28, attendanceRate: "94%" },
-      { id: "9C", name: "Class 9C", studentsCount: 32, attendanceRate: "90%" },
-    ],
-    todaysClasses: [
-      { id: "10A", name: "Class 10A", time: "09:00 AM", attendanceStatus: "Taken" },
-      { id: "9C", name: "Class 9C", time: "11:30 AM", attendanceStatus: "Pending" },
-      { id: "11B", name: "Class 11B", time: "02:00 PM", attendanceStatus: "Pending" },
-    ],
-    recentAbsences: [
-      { name: "John Smith", class: "10A", consecutiveDays: 2 },
-      { name: "Mary Johnson", class: "11B", consecutiveDays: 1 },
-      { name: "Robert Brown", class: "9C", consecutiveDays: 3 },
-    ],
+  // Fetch classes
+  const { data: classes, isLoading: loadingClasses } = useQuery({
+    queryKey: ['teacherClasses'],
+    queryFn: async () => {
+      console.log("Fetching classes");
+      
+      const { data, error } = await supabase
+        .from('classes')
+        .select('id, name')
+        .order('name');
+      
+      if (error) {
+        console.error("Failed to load classes:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load classes: " + error.message,
+          variant: "destructive"
+        });
+        return [];
+      }
+      
+      console.log("Classes fetched:", data);
+      return data;
+    }
+  });
+  
+  // Set first class as selected once loaded
+  useEffect(() => {
+    if (classes && classes.length > 0 && !selectedClass) {
+      setSelectedClass(classes[0].id);
+    }
+  }, [classes, selectedClass]);
+  
+  // Fetch students for the selected class
+  const { data: students, isLoading: loadingStudents } = useQuery({
+    queryKey: ['classStudents', selectedClass],
+    queryFn: async () => {
+      if (!selectedClass) return [];
+      
+      console.log("Fetching students for class ID:", selectedClass);
+      
+      // First get student IDs in this class
+      const { data: classStudents, error: classStudentsError } = await supabase
+        .from('class_students')
+        .select('student_id')
+        .eq('class_id', selectedClass);
+      
+      if (classStudentsError) {
+        console.error("Error loading class students:", classStudentsError);
+        toast({
+          title: "Error",
+          description: "Failed to load students: " + classStudentsError.message,
+          variant: "destructive"
+        });
+        return [];
+      }
+      
+      console.log("Retrieved class student IDs:", classStudents);
+      
+      if (!classStudents?.length) return [];
+      
+      const studentIds = classStudents.map(item => item.student_id);
+      
+      // Then fetch student details
+      const { data: studentDetails, error: studentDetailsError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .in('id', studentIds)
+        .eq('role', 'student');
+      
+      if (studentDetailsError) {
+        console.error("Error loading student details:", studentDetailsError);
+        toast({
+          title: "Error",
+          description: "Failed to load student details: " + studentDetailsError.message,
+          variant: "destructive"
+        });
+        return [];
+      }
+      
+      console.log("Retrieved student details:", studentDetails);
+      
+      return studentDetails.map(student => ({
+        ...student,
+        name: `${student.first_name} ${student.last_name}`
+      }));
+    },
+    enabled: !!selectedClass
+  });
+  
+  // Fetch attendance records for the selected class for today
+  const { data: attendanceData, isLoading: loadingAttendance } = useQuery({
+    queryKey: ['todayAttendance', selectedClass],
+    queryFn: async () => {
+      if (!selectedClass) return [];
+      
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { data, error } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .eq('class_id', selectedClass)
+        .eq('date', today);
+      
+      if (error) {
+        toast({
+          title: "Error",
+          description: "Failed to load attendance records: " + error.message,
+          variant: "destructive"
+        });
+        return [];
+      }
+      
+      return data;
+    },
+    enabled: !!selectedClass
+  });
+  
+  // Calculate statistics for the selected class
+  const classStats = {
+    totalStudents: students?.length || 0,
+    presentStudents: attendanceData?.filter(record => record.status === 'present').length || 0,
+    attendanceRate: students?.length 
+      ? Math.round(((attendanceData?.filter(record => record.status === 'present').length || 0) / students.length) * 100) + "%" 
+      : "0%"
+  };
+
+  // Combine students with their attendance status
+  useEffect(() => {
+    if (students && attendanceData) {
+      const today = new Date().toISOString().split('T')[0];
+      const studentsWithStatus = students.map(student => {
+        const attendance = attendanceData.find(record => 
+          record.student_id === student.id && 
+          record.date === today
+        );
+        
+        return {
+          ...student,
+          isPresent: attendance ? attendance.status === 'present' : false,
+          attendanceRecorded: !!attendance
+        };
+      });
+      
+      setStudentsWithAttendance(studentsWithStatus);
+    }
+  }, [students, attendanceData]);
+
+  const handleClassChange = (classId: string) => {
+    setSelectedClass(classId);
+  };
+
+  const refreshData = () => {
+    queryClient.invalidateQueries({ queryKey: ['teacherClasses'] });
+    queryClient.invalidateQueries({ queryKey: ['classStudents', selectedClass] });
+    queryClient.invalidateQueries({ queryKey: ['todayAttendance', selectedClass] });
+    toast({
+      title: "Success",
+      description: "Data refreshed successfully",
+    });
+  };
+
+  const toggleAttendance = async (studentId: string, isPresent: boolean) => {
+    if (!selectedClass) return;
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    try {
+      // Check if attendance record exists for today
+      const { data: existingRecord, error: fetchError } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .eq('class_id', selectedClass)
+        .eq('student_id', studentId)
+        .eq('date', today);
+      
+      if (fetchError) throw fetchError;
+      
+      if (existingRecord && existingRecord.length > 0) {
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from('attendance_records')
+          .update({ status: isPresent ? 'present' : 'absent' })
+          .eq('id', existingRecord[0].id);
+        
+        if (updateError) throw updateError;
+      } else {
+        // Create new record
+        const { error: insertError } = await supabase
+          .from('attendance_records')
+          .insert([
+            {
+              class_id: selectedClass,
+              student_id: studentId,
+              date: today,
+              status: isPresent ? 'present' : 'absent',
+              recorded_by: user?.id || 'system'
+            }
+          ]);
+        
+        if (insertError) throw insertError;
+      }
+      
+      // Update local state to show changes immediately
+      setStudentsWithAttendance(prev => 
+        prev.map(student => 
+          student.id === studentId
+            ? { ...student, isPresent, attendanceRecorded: true }
+            : student
+        )
+      );
+      
+      // Show success message
+      toast({
+        title: "Success",
+        description: `Marked ${isPresent ? 'present' : 'absent'}`,
+      });
+      
+      // Refresh attendance data
+      queryClient.invalidateQueries({ queryKey: ['todayAttendance', selectedClass] });
+    } catch (error: any) {
+      console.error("Failed to update attendance:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update attendance: " + error.message,
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -37,72 +263,205 @@ const TeacherDashboard = () => {
             <h1 className="text-2xl font-bold">Teacher Dashboard</h1>
             <p className="text-gray-500">Manage your classes and attendance</p>
           </div>
-          <Button onClick={() => navigate('/take-attendance')}>
-            Take Attendance
-          </Button>
+          <div className="space-x-2">
+            <Button variant="outline" onClick={refreshData}>
+              Refresh Data
+            </Button>
+            <Button onClick={() => navigate('/classes-students')}>
+              Manage Classes & Students
+            </Button>
+          </div>
+        </div>
+        
+        {/* Class Selector */}
+        <div className="mb-6">
+          <label htmlFor="class-select" className="block text-sm font-medium text-gray-700 mb-1">
+            Select Class
+          </label>
+          <Select value={selectedClass || ""} onValueChange={handleClassChange}>
+            <SelectTrigger id="class-select" className="w-full sm:w-72">
+              <SelectValue placeholder="Select a class" />
+            </SelectTrigger>
+            <SelectContent>
+              {loadingClasses ? (
+                <SelectItem value="loading">Loading classes...</SelectItem>
+              ) : classes && classes.length > 0 ? (
+                classes.map((cls) => (
+                  <SelectItem key={cls.id} value={cls.id}>
+                    {cls.name}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="none">No classes available</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          {teacherData.classes.map((classItem) => (
-            <DashboardCard
-              key={classItem.id}
-              title={classItem.name}
-              value={classItem.studentsCount}
-              description={`${classItem.attendanceRate} attendance rate`}
-              icon={<Users className="h-4 w-4" />}
-            />
-          ))}
+        {/* Class Statistics */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <DashboardCard
+            title="Total Students"
+            value={classStats.totalStudents}
+            description={loadingStudents ? "Loading students..." : `${classStats.totalStudents} students in class`}
+            icon={<Users className="h-4 w-4" />}
+          />
+          <DashboardCard
+            title="Present Today"
+            value={classStats.presentStudents}
+            description={`${classStats.attendanceRate} attendance rate`}
+            icon={<UserCheck className="h-4 w-4" />}
+          />
+          <DashboardCard
+            title="Class"
+            value={classes?.find(c => c.id === selectedClass)?.name || "None"}
+            description="Currently selected class"
+            icon={<Book className="h-4 w-4" />}
+          />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-          <Card>
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Today's Classes Card */}
+          <Card className="lg:col-span-1">
             <CardHeader>
               <CardTitle className="text-lg">Today's Classes</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {teacherData.todaysClasses.map((cls) => (
-                  <div key={cls.id} className="flex justify-between items-center border-b pb-4 last:border-0">
-                    <div>
-                      <p className="font-medium">{cls.name}</p>
-                      <p className="text-sm text-gray-500">{cls.time}</p>
-                    </div>
-                    {cls.attendanceStatus === "Pending" ? (
-                      <Button 
-                        variant="outline" 
-                        onClick={() => navigate(`/take-attendance/${cls.id}`)}
-                      >
-                        Take Attendance
-                      </Button>
-                    ) : (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-md">
-                        {cls.attendanceStatus}
-                      </span>
-                    )}
+                {loadingClasses ? (
+                  <p className="text-gray-500">Loading classes...</p>
+                ) : classes && classes.length > 0 ? (
+                  classes.map((cls) => {
+                    // Determine if attendance has been recorded for this class today
+                    const hasAttendanceRecords = attendanceData && attendanceData.length > 0 && 
+                      attendanceData.some(record => record.class_id === cls.id);
+                    
+                    return (
+                      <div key={cls.id} className="flex justify-between items-center border-b pb-4 last:border-0 last:pb-0">
+                        <div>
+                          <p className="font-medium">{cls.name}</p>
+                        </div>
+                        <div>
+                          {hasAttendanceRecords ? (
+                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-md">
+                              Attendance Taken
+                            </span>
+                          ) : (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => setSelectedClass(cls.id)}
+                            >
+                              Take Attendance
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500">No classes available</p>
+                    <Button
+                      variant="outline"
+                      className="mt-4"
+                      onClick={() => navigate('/classes-students')}
+                    >
+                      Add Classes
+                    </Button>
                   </div>
-                ))}
+                )}
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Recent Absences</CardTitle>
+          {/* Class Students Card with Attendance */}
+          <Card className="lg:col-span-2">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-lg">Student Attendance</CardTitle>
+              {selectedClass && (
+                <div className="flex space-x-2">
+                  <ToggleGroup type="single" value={selectedClass} onValueChange={handleClassChange}>
+                    {classes?.map((cls) => (
+                      <ToggleGroupItem key={cls.id} value={cls.id} aria-label={cls.name} title={cls.name}>
+                        {cls.name}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </div>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {teacherData.recentAbsences.map((absence, i) => (
-                  <div key={i} className="flex justify-between items-center border-b py-2 last:border-0">
-                    <div>
-                      <p className="font-medium">{absence.name}</p>
-                      <p className="text-sm text-gray-500">Class {absence.class}</p>
-                    </div>
-                    <div className="text-sm text-red-500">
-                      {absence.consecutiveDays} {absence.consecutiveDays === 1 ? 'day' : 'days'} absent
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {loadingStudents ? (
+                <div className="flex justify-center items-center h-48">
+                  <p className="text-gray-500">Loading students...</p>
+                </div>
+              ) : studentsWithAttendance && studentsWithAttendance.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
+                      <TableHead className="text-center">Mark Attendance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {studentsWithAttendance.map((student) => (
+                      <TableRow key={student.id}>
+                        <TableCell className="font-medium">{student.name}</TableCell>
+                        <TableCell>{student.email}</TableCell>
+                        <TableCell className="text-center">
+                          {student.attendanceRecorded ? (
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              student.isPresent 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {student.isPresent ? 'Present' : 'Absent'}
+                            </span>
+                          ) : (
+                            <span className="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">
+                              Not recorded
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex justify-center space-x-4">
+                            <Button 
+                              variant={student.isPresent ? "default" : "outline"} 
+                              size="sm"
+                              onClick={() => toggleAttendance(student.id, true)}
+                              className={student.isPresent ? "bg-green-600 hover:bg-green-700" : ""}
+                            >
+                              Present
+                            </Button>
+                            <Button 
+                              variant={!student.isPresent && student.attendanceRecorded ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => toggleAttendance(student.id, false)}
+                              className={!student.isPresent && student.attendanceRecorded ? "bg-red-600 hover:bg-red-700" : ""}
+                            >
+                              Absent
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 mb-4">No students found in this class</p>
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate('/classes-students')}
+                  >
+                    Add Students
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

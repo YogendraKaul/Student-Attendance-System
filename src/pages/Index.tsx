@@ -22,6 +22,13 @@ const Index = () => {
           <p className="text-gray-600 max-w-2xl mx-auto">
             Access your dashboard based on your role. Track attendance, view reports, and manage student records all in one place.
           </p>
+          <Button 
+            className="mt-6" 
+            size="lg"
+            onClick={() => navigate('/role-select')}
+          >
+            Get Started
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -36,12 +43,6 @@ const Index = () => {
               <p className="text-gray-600 mb-6">
                 Access College-wide attendance data, view reports, and monitor attendance rates across classes.
               </p>
-              <Button 
-                className="w-full" 
-                onClick={() => navigate('/dashboard/principal')}
-              >
-                Enter as Principal
-              </Button>
             </CardContent>
           </Card>
 
@@ -56,13 +57,6 @@ const Index = () => {
               <p className="text-gray-600 mb-6">
                 Take attendance for your classes, view student attendance history, and track absences.
               </p>
-              <Button 
-                variant="outline" 
-                className="w-full border-secondary text-secondary hover:bg-secondary hover:text-white" 
-                onClick={() => navigate('/dashboard/teacher')}
-              >
-                Enter as Teacher
-              </Button>
             </CardContent>
           </Card>
 
@@ -77,13 +71,6 @@ const Index = () => {
               <p className="text-gray-600 mb-6">
                 Check your attendance record, view course attendance rates, and track your attendance history.
               </p>
-              <Button 
-                variant="outline" 
-                className="w-full border-purple-600 text-purple-600 hover:bg-purple-600 hover:text-white" 
-                onClick={() => navigate('/dashboard/student')}
-              >
-                Enter as Student
-              </Button>
             </CardContent>
           </Card>
         </div>
