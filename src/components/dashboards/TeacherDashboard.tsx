@@ -1,6 +1,5 @@
-
 import { useState, useEffect } from "react";
-import { Calendar, Users, UserCheck, Book } from "lucide-react";
+import { Calendar, Users, UserCheck, Book, Download } from "lucide-react";
 import NavBar from "@/components/NavBar";
 import DashboardCard from "@/components/DashboardCard";
 import { Button } from "@/components/ui/button";
@@ -15,6 +14,8 @@ import { useAuth } from "@/integrations/supabase/auth";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import * as XLSX from 'xlsx';
+import { format } from "date-fns";
 
 const TeacherDashboard = () => {
   const navigate = useNavigate();
@@ -254,6 +255,162 @@ const TeacherDashboard = () => {
     }
   };
 
+  const generateExcelReport = async () => {
+    if (!selectedClass || !students?.length) {
+      toast({
+        title: "Error",
+        description: "Please select a class with students to generate report",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      // Get the class name
+      const className = classes?.find(c => c.id === selectedClass)?.name || "Unknown Class";
+      
+      // Fetch all attendance records for this class (not just today)
+      const { data: allAttendanceData, error } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .eq('class_id', selectedClass)
+        .order('date', { ascending: true });
+
+      if (error) {
+        toast({
+          title: "Error",
+          description: "Failed to fetch attendance data: " + error.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Get all unique dates
+      const allDates = [...new Set(allAttendanceData?.map(record => record.date) || [])].sort();
+      
+      // Create worksheet data
+      const worksheetData = [];
+      
+      // Add class name at the top
+      worksheetData.push([`Class: ${className}`]);
+      worksheetData.push([]);  // Empty row for spacing
+      
+      // Header row with Name and dates
+      const headerRow = ['Student Name', 'Status', ...allDates.map(date => format(new Date(date), 'MMM dd, yyyy'))];
+      worksheetData.push(headerRow);
+      
+      // Student rows with attendance data
+      students.forEach(student => {
+        // Count present and absent days for this student
+        const presentDays = allAttendanceData?.filter(
+          record => record.student_id === student.id && record.status === 'present'
+        ).length || 0;
+        
+        const totalRecordedDays = allAttendanceData?.filter(
+          record => record.student_id === student.id
+        ).length || 0;
+        
+        // Calculate attendance percentage
+        const attendanceStatus = totalRecordedDays > 0 
+          ? `${Math.round((presentDays / totalRecordedDays) * 100)}% Present` 
+          : 'No Records';
+        
+        const row = [student.name, attendanceStatus];
+        
+        allDates.forEach(date => {
+          const attendanceRecord = allAttendanceData?.find(
+            record => record.student_id === student.id && record.date === date
+          );
+          if (attendanceRecord) {
+            row.push(attendanceRecord.status === 'present' ? 'Present' : 'Absent');
+          } else {
+            row.push('Not Recorded');
+          }
+        });
+        
+        worksheetData.push(row);
+      });
+
+      // Add summary section
+      worksheetData.push([]);
+      worksheetData.push(['ATTENDANCE SUMMARY']);
+      worksheetData.push(['Total Students', students.length]);
+      worksheetData.push([]);
+      
+      // Add date-wise summary
+      allDates.forEach(date => {
+        const presentCount = allAttendanceData?.filter(
+          record => record.date === date && record.status === 'present'
+        ).length || 0;
+        
+        const absentCount = allAttendanceData?.filter(
+          record => record.date === date && record.status === 'absent'
+        ).length || 0;
+        
+        worksheetData.push([
+          format(new Date(date), 'MMM dd, yyyy'),
+          `Present: ${presentCount}`,
+          `Absent: ${absentCount}`,
+          `Attendance Rate: ${students.length > 0 ? Math.round((presentCount / students.length) * 100) : 0}%`
+        ]);
+      });
+
+      // Create workbook and worksheet
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      
+      // Set column widths
+      const maxWidth = worksheetData.reduce((w, r) => Math.max(w, r.length), 0);
+      worksheet['!cols'] = Array.from({ length: maxWidth }, () => ({ wch: 15 }));
+      
+      // Make the headers bold by applying cell styles
+      // Define a style for bold text
+      const boldStyle = { font: { bold: true } };
+      
+      // Apply bold style to the class name
+      if (worksheet.A1) {
+        worksheet.A1.s = boldStyle;
+      }
+      
+      // Apply bold style to all header cells in the header row
+      const headerRange = XLSX.utils.decode_range(worksheet["!ref"] || "A3:Z3");
+      for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 2, c: col });
+        if (!worksheet[cellAddress]) continue;
+        worksheet[cellAddress].s = boldStyle;
+      }
+      
+      // Apply bold style to the summary title
+      const summaryRowIndex = students.length + 4;  // Adjust based on your data
+      const summaryTitleAddress = XLSX.utils.encode_cell({ r: summaryRowIndex, c: 0 });
+      if (worksheet[summaryTitleAddress]) {
+        worksheet[summaryTitleAddress].s = boldStyle;
+      }
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Report');
+      
+      // Generate filename with current date
+      const filename = `${className}_Attendance_${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
+      
+      // Download the file
+      XLSX.writeFile(workbook, filename);
+      
+      toast({
+        title: "Success",
+        description: "Excel report generated successfully",
+      });
+      
+    } catch (error: any) {
+      console.error("Failed to generate Excel report:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate Excel report: " + error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <NavBar userRole="teacher" />
@@ -267,6 +424,12 @@ const TeacherDashboard = () => {
             <Button variant="outline" onClick={refreshData}>
               Refresh Data
             </Button>
+            {selectedClass && (
+              <Button variant="outline" onClick={generateExcelReport}>
+                <Download className="h-4 w-4 mr-2" />
+                Export Excel
+              </Button>
+            )}
             <Button onClick={() => navigate('/classes-students')}>
               Manage Classes & Students
             </Button>
