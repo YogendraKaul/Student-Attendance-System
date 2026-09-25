@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/integrations/supabase/auth";
+import { isDemoMode } from "@/integrations/supabase/client";
+import { DEMO_CREDENTIALS, resetDemoDb } from "@/integrations/supabase/demoData";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,6 +81,26 @@ const Auth = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDemoLogin = async (demoEmail: string, demoPassword: string) => {
+    setIsLoading(true);
+    try {
+      const { error } = await signIn(demoEmail, demoPassword);
+      if (error) {
+        toast.error("Demo login failed: " + error.message);
+      }
+    } catch {
+      toast.error("An unexpected error occurred");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetDemo = () => {
+    resetDemoDb();
+    toast.success("Demo data has been reset");
+    window.location.reload();
   };
 
   return (
@@ -227,6 +249,39 @@ const Auth = () => {
             </CardDescription>
           </CardFooter>
         </Card>
+
+        {isDemoMode && (
+          <Card className="mt-4 border-amber-200 bg-amber-50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Try the live demo</CardTitle>
+              <CardDescription>
+                No account needed — explore the app as any role. Changes are stored
+                in your browser only.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {DEMO_CREDENTIALS.map((cred) => (
+                <Button
+                  key={cred.role}
+                  variant="outline"
+                  className="w-full bg-white"
+                  disabled={isLoading}
+                  onClick={() => handleDemoLogin(cred.email, cred.password)}
+                >
+                  {isLoading ? "Logging in..." : `Continue as ${cred.label}`}
+                </Button>
+              ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-gray-500"
+                onClick={handleResetDemo}
+              >
+                Reset demo data
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/integrations/supabase/auth";
+import { isDemoMode } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 interface NavLinkProps {
@@ -60,10 +61,15 @@ const NavBar = ({ userRole }: NavBarProps) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link to="/" className="flex-shrink-0 flex items-center">
+            <Link to="/" className="flex-shrink-0 flex items-center gap-2">
               <span className="text-xl font-bold text-primary">
                 Attendance System
               </span>
+              {isDemoMode && (
+                <span className="text-xs font-medium bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                  Demo
+                </span>
+              )}
             </Link>
             <div className="hidden sm:ml-6 sm:flex sm:space-x-4">
               {userRole === "principal" && (

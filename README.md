@@ -1,53 +1,87 @@
-# Welcome to our project
+# Student Attendance Management System
 
-## Project info
+A web app for managing student attendance — role-based dashboards (Principal / Teacher / Student), class & student management, attendance marking, attendance history, and Excel export.
 
-## How can I edit this code?
+## Tech stack
 
+- Vite + TypeScript + React
+- React Router, TanStack React Query, React Hook Form + Zod
+- Tailwind CSS + shadcn-ui
+- Supabase (Auth + Postgres)
+- xlsx (Excel export)
 
-**Use your preferred IDE**
+## Prerequisites
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- Node.js 20+ and npm
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Getting started
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
+# 1. Clone the repo
 git clone <YOUR_GIT_URL>
+cd Student-Attendance-System
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# 2. Install dependencies
+npm install
 
-# Step 3: Install the necessary dependencies.
-npm i
+# 3. Configure environment
+cp .env.example .env
+# then edit .env and set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# 4. Start the dev server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Open http://localhost:8080/
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Scripts
 
-**Use GitHub Codespaces**
+| Command           | Description                              |
+| ----------------- | ---------------------------------------- |
+| `npm run dev`     | Start dev server (http://localhost:8080) |
+| `npm run build`   | Production build to `dist/`              |
+| `npm run preview` | Preview the production build locally     |
+| `npm run lint`    | Run ESLint                               |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Environment variables
 
-## What technologies are used for this project?
+| Variable                         | Required | Description                  |
+| -------------------------------- | -------- | ---------------------------- |
+| `VITE_SUPABASE_URL`              | Yes      | Your Supabase project URL    |
+| `VITE_SUPABASE_PUBLISHABLE_KEY`  | Yes      | Your Supabase anon/public key |
 
-This project is built with .
+See `.env.example` for the template. `.env` is git-ignored.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Demo mode (no backend needed)
 
+If `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` are missing, the app
+automatically runs in **offline demo mode**: auth + data are served from seeded
+mock data stored in the browser's localStorage. No Supabase project required.
+
+On the login page you'll see a **"Try the live demo"** panel with one-click
+logins:
+
+| Role      | Email                | Password |
+| --------- | -------------------- | -------- |
+| Principal | principal@demo.local | demo     |
+| Teacher   | teacher@demo.local   | demo     |
+| Student   | student@demo.local   | demo     |
+
+Use **Reset demo data** on the login page to restore the seed data.
+This is the easiest way to share a live portfolio link — deploy without setting
+env vars and visitors can log in instantly.
+
+## Project structure
+
+```
+src/
+  pages/          # Routes: Index, Auth, Dashboard, TakeAttendance, ViewAttendance, ClassesStudents, RoleSelect
+  components/     # UI + dashboards (Principal/Teacher/Student) + shadcn-ui
+  integrations/supabase/  # Supabase client, auth provider, generated types
+  hooks/ lib/     # Shared hooks and utilities
+```
+
+## Notes
+
+- Uses `npm` (`package-lock.json`). Do not add a `bun.lockb`.
+- The Supabase anon key is a publishable key, but it is kept in `.env` (not committed) so forks use their own project.
